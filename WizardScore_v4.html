@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wizard Score Tracker</title>
+  <style>
+
+    /* ============================================================
+       COLOR PALETTE
+       --dark        : deep burnt orange — main backgrounds, headers
+       --mid         : medium orange — hover states, borders, tabs
+       --base        : bamboo green — pip fill, tab underline
+       --light       : warm amber — secondary text on dark backgrounds
+       --xlight      : pale cream — page & row backgrounds
+       --contrast    : bright bamboo yellow-green — bold text on dark bg
+       --text-on-dark: soft cream — regular text on dark backgrounds
+       --text-on-light: near-black brown — regular text on light backgrounds
+    ============================================================ */
+    :root {
+      --dark:          #7a2e00;
+      --mid:           #a04010;
+      --base:          #7ab830;
+      --light:         #f0c080;
+      --xlight:        #fde8cc;
+      --contrast:      #c8e840;
+      --text-on-dark:  #fde8cc;
+      --text-on-light: #2a1000;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    /* ── Reset & base ── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: var(--xlight);
+      color: var(--text-on-light);
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    #app { max-width: 680px; margin: 0 auto; }
+
+    /* ── Page title ── */
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--contrast);
+      background: var(--dark);
+      padding: 12px 18px;
+      border-radius: var(--radius-lg);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ── Round progress bar ── */
+    .round-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--dark);
+      border-radius: var(--radius-lg);
+      margin-bottom: 1.25rem;
+    }
+    .round-label { font-size: 13px; color: var(--light); }
+    .round-num   { font-size: 24px; font-weight: 700; color: var(--contrast); }
+    .round-sub   { font-size: 12px; color: var(--light); margin-left: auto; }
+
+    /* ── Progress pip dots ── */
+    .pip-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .pip        { width: 16px; height: 16px; border-radius: 50%; background: var(--mid); }
+    .pip.done   { background: var(--base); }      /* bamboo green = completed */
+    .pip.active { background: var(--contrast); }  /* bright yellow-green = current */
+
+    /* ── Add player row (pre-game) ── */
+    .add-row { display: flex; gap: 8px; margin-bottom: 1.25rem; }
+    .add-row input {
+      flex: 1;
+      border: 1px solid var(--mid);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      color: var(--text-on-light);
+      background: #fff8f0;
+      font-size: 14px;
+      outline: none;
+    }
+    .add-row input:focus {
+      border-color: var(--dark);
+      box-shadow: 0 0 0 2px var(--light);
+    }
+
+    /* ── Buttons (default: burnt orange bg, bamboo yellow-green text) ── */
+    button {
+      cursor: pointer;
+      padding: 9px 18px;
+      background: var(--dark);
+      color: var(--contrast);
+      border: 1px solid var(--mid);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 700;
+      transition: background 0.15s;
+    }
+    button:hover  { background: var(--mid); }
+    button:active { transform: scale(0.98); }
+
+    /* Secondary button (e.g. "New game") — transparent, less prominent */
+    .btn-secondary {
+      background: transparent;
+      color: var(--mid);
+      border-color: var(--mid);
+      font-weight: 400;
+    }
+    .btn-secondary:hover { background: var(--xlight); }
+
+    /* ── Tab navigation ── */
+    .tabs { display: flex; margin-bottom: 1rem; border-bottom: 2px solid var(--mid); }
+    .tab {
+      padding: 8px 18px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--mid);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-weight: 400;
+    }
+    .tab.active {
+      color: var(--dark);
+      border-bottom-color: var(--base); /* bamboo green underline */
+      font-weight: 700;
+    }
+
+    /* ── Shared table base ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      table-layout: fixed;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    thead tr { background: var(--dark); }
+    thead th {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--contrast);   /* bamboo yellow-green column headers */
+      padding: 10px 8px;
+      text-align: center;
+    }
+    thead th:first-child { text-align: left; }
+
+    /* Alternating warm cream rows */
+    tbody tr:nth-child(odd)  { background: #fff4e0; }
+    tbody tr:nth-child(even) { background: #f8d8a8; }
+
+    tbody td {
+      padding: 8px;
+      border-bottom: 1px solid #e8b870;
+      text-align: center;
+      vertical-align: middle;
+      color: var(--text-on-light);
+      font-size: 14px;
+    }
+
+    /* ── Current-round table: Player column ──
+       Burnt orange text with a thin bamboo green stroke outline */
+    tbody td:first-child {
+      text-align: left;
+      font-weight: 700;
+      color: var(--dark);                        /* burnt orange text */
+      -webkit-text-stroke: 0.5px var(--base);    /* bamboo green text outline */
+      paint-order: stroke fill;
+    }
+
+    /* Bid / Tricks number inputs */
+    tbody input[type=number] {
+      width: 60px;
+      text-align: center;
+      border: 1px solid var(--mid);
+      border-radius: var(--radius-md);
+      padding: 5px 6px;
+      background: #fff8f0;
+      color: var(--text-on-light);
+      font-size: 14px;
+      outline: none;
+    }
+    tbody input[type=number]:focus {
+      border-color: var(--dark);
+      box-shadow: 0 0 0 2px var(--light);
+    }
+
+    /* ── Score result colours (shared by both tables) ── */
+    .pos { color: var(--dark); font-weight: 700; } /* burnt orange = bid matched */
+    .neg { color: #ff4500; font-weight: 700; }     /* bright orange = bid missed */
+
+    /* ── Current-round table: Total column ──
+       Burnt orange for positive totals, bright orange for negative. */
+    .total-cell { font-weight: 700; font-size: 15px; color: var(--dark); }
+    .total-neg  { color: #ff4500; }   /* bright burnt orange for negative totals */
+
+    /* ── Round history table overrides ── */
+
+    /* Round label column (e.g. "Round 3") — smaller, muted, no accent border or stroke */
+    .history-table td:first-child {
+      font-size: 12px;
+      color: var(--mid);
+      font-weight: 400;
+      border-left: none;
+      -webkit-text-stroke: 0;
+    }
+
+    /* History footer (totals row) */
+    .history-table tfoot tr { background: var(--dark); }
+    .history-table tfoot td {
+      font-weight: 700;
+      font-size: 14px;
+      padding: 10px 8px;
+      color: var(--light);
+      text-align: center;
+    }
+    .history-table tfoot td:first-child {
+      color: var(--contrast);
+      text-align: left;
+    }
+
+    /* Delete-round button (−) */
+    .btn-del {
+      padding: 2px 8px;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1;
+      background: transparent;
+      color: #ff4500;
+      border: 1px solid #e8a080;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .btn-del:hover { background: #fdd0b0; }
+
+    /* Editable score inputs in history table */
+    .score-input {
+      width: 58px;
+      text-align: center;
+      border: 1px solid #e8b870;
+      border-radius: var(--radius-md);
+      padding: 3px 4px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #fff8f0;
+      color: var(--text-on-light);
+      outline: none;
+    }
+    .score-input:focus { border-color: var(--dark); box-shadow: 0 0 0 2px var(--light); }
+    .score-input.pos { color: var(--dark); }
+    .score-input.neg { color: #ff4500; }
+
+    /* ── Button row (below tables) ── */
+    .btn-row { display: flex; gap: 8px; margin-top: 0.75rem; align-items: center; }
+
+    /* ── Game-over banner ── */
+    .game-over {
+      text-align: center;
+      padding: 2rem;
+      background: var(--dark);
+      border-radius: var(--radius-lg);
+      margin-top: 1rem;
+    }
+    .winner     { font-size: 26px; font-weight: 700; color: var(--contrast); margin-bottom: 6px; }
+    .winner-sub { font-size: 14px; color: var(--light); }
+
+  </style>
+</head>
+<body>
+<div id="app">
+  <h1>🧙 Wizard Score Tracker</h1>
+
+  <div class="round-bar">
+    <div>
+      <div class="round-label">Current round</div>
+      <div class="round-num" id="roundDisplay">–</div>
+    </div>
+    <div style="margin-left:14px;">
+      <div class="round-label" style="margin-bottom:5px;">Progress</div>
+      <div class="pip-row" id="pips"></div>
+    </div>
+    <div class="round-sub" id="trickHint"></div>
+  </div>
+
+  <div class="add-row" id="addRow">
+    <input id="playerName" placeholder="Player name" onkeydown="if(event.key==='Enter') addPlayer()" />
+    <button onclick="addPlayer()">Add player</button>
+  </div>
+
+  <div class="tabs" id="tabs" style="display:none;">
+    <button class="tab active" onclick="switchTab('current',this)">Current round</button>
+    <button class="tab" onclick="switchTab('history',this)">Round history</button>
+  </div>
+
+  <div id="viewCurrent">
+    <table id="scoreTable">
+      <thead>
+        <tr>
+          <th style="width:28%">Player</th>
+          <th style="width:16%">Bid</th>
+          <th style="width:16%">Tricks</th>
+          <th style="width:20%">Last Round</th>
+          <th style="width:20%">Total</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="viewHistory" style="display:none;">
+    <table class="history-table" id="historyTable">
+      <thead><tr id="histHead"></tr></thead>
+      <tbody id="histBody"></tbody>
+      <tfoot><tr id="histFoot"></tr></tfoot>
+    </table>
+  </div>
+
+  <div class="btn-row" id="btnRow">
+    <button onclick="calcScores()" id="calcBtn" style="display:none;">Calculate round</button>
+    <button onclick="resetGame()" class="btn-secondary" style="margin-left:auto;">New game</button>
+  </div>
+
+  <div class="game-over" id="gameOver" style="display:none;"></div>
+</div>
+
+<script>
+  const MAX_ROUNDS = 10;
+  let players = [], currentRound = 1, gameStarted = false, roundHistory = [];
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function recomputeTotals() {
+    players.forEach(p => p.total = 0);
+    roundHistory.forEach(scores => scores.forEach((s, i) => { players[i].total += s; }));
+  }
+
+  function buildPips() {
+    const el = document.getElementById('pips');
+    el.innerHTML = '';
+    for (let i = 1; i <= MAX_ROUNDS; i++) {
+      const d = document.createElement('div');
+      d.className = 'pip' + (i < currentRound ? ' done' : i === currentRound ? ' active' : '');
+      el.appendChild(d);
+    }
+  }
+
+  function updateRoundBar() {
+    document.getElementById('roundDisplay').textContent = gameStarted ? currentRound : '–';
+    document.getElementById('trickHint').textContent = gameStarted
+      ? currentRound + ' trick' + (currentRound > 1 ? 's' : '') + ' available' : '';
+    buildPips();
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('viewCurrent').style.display = tab === 'current' ? '' : 'none';
+    document.getElementById('viewHistory').style.display = tab === 'history' ? '' : 'none';
+    if (tab === 'history') renderHistory();
+  }
+
+  // ── Setup ─────────────────────────────────────────────────────────────────
+
+  function addPlayer() {
+    if (gameStarted) return;
+    const name = document.getElementById('playerName').value.trim();
+    if (!name) return;
+    players.push({ name, total: 0 });
+    document.getElementById('playerName').value = '';
+    render();
+  }
+
+  function startGame() {
+    if (players.length < 2) return alert('Add at least 2 players.');
+    gameStarted = true; roundHistory = [];
+    document.getElementById('addRow').style.display = 'none';
+    document.getElementById('calcBtn').style.display = '';
+    document.getElementById('tabs').style.display = '';
+    const sb = document.getElementById('startBtn');
+    if (sb) sb.remove();
+    currentRound = 1;
+    updateRoundBar(); render();
+  }
+
+  // ── Current-round view ────────────────────────────────────────────────────
+
+  function render() {
+    const tbody = document.querySelector('#scoreTable tbody');
+    tbody.innerHTML = players.map((p, i) =>
+      '<tr>' +
+      '<td>' + p.name + '</td>' +
+      '<td>' + (gameStarted ? '<input type="number" id="bid' + i + '" min="0" max="' + currentRound + '">' : '–') + '</td>' +
+      '<td>' + (gameStarted ? '<input type="number" id="tricks' + i + '" min="0" max="' + currentRound + '">' : '–') + '</td>' +
+      '<td id="round' + i + '">–</td>' +
+      '<td class="total-cell" id="total' + i + '">' + p.total + '</td>' +
+      '</tr>'
+    ).join('');
+    if (!gameStarted && players.length > 0 && !document.getElementById('startBtn')) {
+      const btn = document.createElement('button');
+      btn.id = 'startBtn'; btn.textContent = 'Start game'; btn.onclick = startGame;
+      document.getElementById('btnRow').insertBefore(btn, document.getElementById('btnRow').firstChild);
+    }
+  }
+
+  function calcScores() {
+    const roundScores = players.map((p, i) => {
+      const bid = parseInt(document.getElementById('bid' + i).value) || 0;
+      const tricks = parseInt(document.getElementById('tricks' + i).value) || 0;
+      return bid === tricks ? 20 + 10 * bid : -10 * Math.abs(bid - tricks);
+    });
+    roundHistory.push(roundScores);
+    players.forEach((p, i) => {
+      p.total += roundScores[i];
+      const cell = document.getElementById('round' + i);
+      cell.textContent = (roundScores[i] >= 0 ? '+' : '') + roundScores[i];
+      cell.className = roundScores[i] >= 0 ? 'pos' : 'neg';
+      const totalCell = document.getElementById('total' + i);
+      totalCell.textContent = p.total;
+      totalCell.className = 'total-cell' + (p.total < 0 ? ' total-neg' : '');
+    });
+    if (currentRound === MAX_ROUNDS) { endGame(); return; }
+    currentRound++;
+    updateRoundBar();
+    players.forEach((p, i) => {
+      const bidEl = document.getElementById('bid' + i);
+      const tricksEl = document.getElementById('tricks' + i);
+      bidEl.value = ''; bidEl.max = currentRound;
+      tricksEl.value = ''; tricksEl.max = currentRound;
+      // intentionally NOT clearing round cell — shows last round's score
+    });
+  }
+
+  // ── History view ──────────────────────────────────────────────────────────
+
+  function onScoreEdit(ri, pi, input) {
+    const val = parseInt(input.value);
+    if (isNaN(val)) return;
+    roundHistory[ri][pi] = val;
+    input.className = 'score-input ' + (val >= 0 ? 'pos' : 'neg');
+    recomputeTotals();
+    // refresh footer totals
+    players.forEach((p, i) => {
+      const fc = document.getElementById('ftotal' + i);
+      if (fc) fc.textContent = p.total;
+      const tc = document.getElementById('total' + i);
+      if (tc) {
+        tc.textContent = p.total;
+        tc.className = 'total-cell' + (p.total < 0 ? ' total-neg' : '');
+      }
+    });
+  }
+
+  function deleteRound(ri) {
+    if (!confirm('Remove Round ' + (ri + 1) + '? Subsequent rounds will be renumbered.')) return;
+    roundHistory.splice(ri, 1);
+    recomputeTotals();
+    // step back if we were past the end
+    currentRound = roundHistory.length + 1;
+    if (currentRound > MAX_ROUNDS) currentRound = MAX_ROUNDS;
+    // if game was over, re-open it
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('calcBtn').style.display = roundHistory.length < MAX_ROUNDS ? '' : 'none';
+    // refresh current-round inputs max & totals
+    players.forEach((p, i) => {
+      const bidEl = document.getElementById('bid' + i);
+      const tricksEl = document.getElementById('tricks' + i);
+      if (bidEl) { bidEl.max = currentRound; bidEl.value = ''; }
+      if (tricksEl) { tricksEl.max = currentRound; tricksEl.value = ''; }
+      const tc = document.getElementById('total' + i);
+      if (tc) {
+        tc.textContent = p.total;
+        tc.className = 'total-cell' + (p.total < 0 ? ' total-neg' : '');
+      }
+      const rc = document.getElementById('round' + i);
+      if (rc) { rc.textContent = '–'; rc.className = ''; }
+    });
+    updateRoundBar();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const head = document.getElementById('histHead');
+    const body = document.getElementById('histBody');
+    const foot = document.getElementById('histFoot');
+    const colW = Math.floor(62 / players.length);
+    head.innerHTML = '<th style="width:16%;text-align:left;">Round</th>' +
+      players.map(p => '<th style="width:' + colW + '%">' + p.name + '</th>').join('') +
+      '<th style="width:8%"></th>';
+
+    body.innerHTML = roundHistory.map(function(scores, ri) {
+      var cells = scores.map(function(s, pi) {
+        return '<td><input class="score-input ' + (s >= 0 ? 'pos' : 'neg') + '" ' +
+          'type="number" value="' + s + '" ' +
+          'oninput="onScoreEdit(' + ri + ',' + pi + ',this)"></td>';
+      }).join('');
+      return '<tr><td>Round ' + (ri + 1) + '</td>' + cells +
+        '<td><button class="btn-del" onclick="deleteRound(' + ri + ')">−</button></td></tr>';
+    }).join('');
+
+    foot.innerHTML = '<td>Total</td>' +
+      players.map((p, i) => '<td id="ftotal' + i + '" style="color:var(--contrast);font-weight:700;">' + p.total + '</td>').join('') +
+      '<td></td>';
+  }
+
+  // ── End game ──────────────────────────────────────────────────────────────
+
+  function endGame() {
+    document.getElementById('calcBtn').style.display = 'none';
+    const winner = [...players].sort((a, b) => b.total - a.total)[0];
+    const go = document.getElementById('gameOver');
+    go.style.display = '';
+    go.innerHTML = '<div class="winner">🏆 Winner: ' + winner.name + '</div>' +
+      '<div class="winner-sub">' + winner.total + ' points &mdash; after ' + MAX_ROUNDS + ' rounds</div>';
+    updateRoundBar(); renderHistory();
+  }
+
+  function resetGame() {
+    players = []; currentRound = 1; gameStarted = false; roundHistory = [];
+    const sb = document.getElementById('startBtn');
+    if (sb) sb.remove();
+    document.getElementById('addRow').style.display = '';
+    document.getElementById('calcBtn').style.display = 'none';
+    document.getElementById('tabs').style.display = 'none';
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('viewCurrent').style.display = '';
+    document.getElementById('viewHistory').style.display = 'none';
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+    updateRoundBar(); render();
+  }
+
+  updateRoundBar(); render();
+</script>
+</body>
+</html>
