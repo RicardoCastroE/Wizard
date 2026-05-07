@@ -194,6 +194,14 @@
       box-shadow: 0 0 0 2px var(--light);
     }
 
+    /* Hide browser spinner arrows on all number inputs */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
+    /* Greyed-out zero — shown when input value is 0 (the default) */
+    input[type=number].zero-val { color: #b8a898; }
+
     /* ── Score result colours (shared by both tables) ── */
     .pos { color: var(--dark); font-weight: 700; } /* burnt orange = bid matched */
     .neg { color: #ff4500; font-weight: 700; }     /* bright orange = bid missed */
@@ -293,13 +301,13 @@
   </div>
 
   <div class="add-row" id="addRow">
-    <input id="playerName" placeholder="Player name" onkeydown="if(event.key==='Enter') addPlayer()" />
-    <button onclick="addPlayer()">Add player</button>
+    <input id="playerName" placeholder="Player name" />
+    <button id="addBtn">Add player</button>
   </div>
 
   <div class="tabs" id="tabs" style="display:none;">
-    <button class="tab active" onclick="switchTab('current',this)">Current round</button>
-    <button class="tab" onclick="switchTab('history',this)">Round history</button>
+    <button class="tab active" data-tab="current">Current round</button>
+    <button class="tab" data-tab="history">Round history</button>
   </div>
 
   <div id="viewCurrent">
@@ -326,8 +334,8 @@
   </div>
 
   <div class="btn-row" id="btnRow">
-    <button onclick="calcScores()" id="calcBtn" style="display:none;">Calculate round</button>
-    <button onclick="resetGame()" class="btn-secondary" style="margin-left:auto;">New game</button>
+    <button id="calcBtn" style="display:none;">Calculate round</button>
+    <button id="newGameBtn" class="btn-secondary" style="margin-left:auto;">New game</button>
   </div>
 
   <div class="game-over" id="gameOver" style="display:none;"></div>
@@ -336,6 +344,34 @@
 <script>
   const MAX_ROUNDS = 10;
   let players = [], currentRound = 1, gameStarted = false, roundHistory = [];
+
+  // ── Utils ─────────────────────────────────────────────────────────────────
+
+  function esc(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem('wizard_state', JSON.stringify({ players, currentRound, gameStarted, roundHistory }));
+    } catch(e) {}
+  }
+
+  function loadState() {
+    try {
+      const s = JSON.parse(localStorage.getItem('wizard_state'));
+      if (s && Array.isArray(s.players)) {
+        players      = s.players;
+        currentRound = s.currentRound;
+        gameStarted  = s.gameStarted;
+        roundHistory = s.roundHistory;
+      }
+    } catch(e) {}
+  }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -377,8 +413,14 @@
     if (gameStarted) return;
     const name = document.getElementById('playerName').value.trim();
     if (!name) return;
+    if (players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      alert('"' + name + '" is already in the game.');
+      return;
+    }
     players.push({ name, total: 0 });
     document.getElementById('playerName').value = '';
+    document.getElementById('playerName').focus();
+    saveState();
     render();
   }
 
@@ -391,7 +433,9 @@
     const sb = document.getElementById('startBtn');
     if (sb) sb.remove();
     currentRound = 1;
+    saveState();
     updateRoundBar(); render();
+    document.getElementById('bid0')?.focus();
   }
 
   // ── Current-round view ────────────────────────────────────────────────────
@@ -400,23 +444,29 @@
     const tbody = document.querySelector('#scoreTable tbody');
     tbody.innerHTML = players.map((p, i) =>
       '<tr>' +
-      '<td>' + p.name + '</td>' +
-      '<td>' + (gameStarted ? '<input type="number" id="bid' + i + '" min="0" max="' + currentRound + '">' : '–') + '</td>' +
-      '<td>' + (gameStarted ? '<input type="number" id="tricks' + i + '" min="0" max="' + currentRound + '">' : '–') + '</td>' +
+      '<td>' + esc(p.name) + '</td>' +
+      '<td>' + (gameStarted
+        ? '<input type="number" id="bid' + i + '" class="zero-val" value="0" min="0" max="' + currentRound + '">'
+        : '–') + '</td>' +
+      '<td>' + (gameStarted
+        ? '<input type="number" id="tricks' + i + '" class="zero-val" value="0" min="0" max="' + currentRound + '">'
+        : '–') + '</td>' +
       '<td id="round' + i + '">–</td>' +
-      '<td class="total-cell" id="total' + i + '">' + p.total + '</td>' +
+      '<td class="total-cell' + (p.total < 0 ? ' total-neg' : '') + '" id="total' + i + '">' + p.total + '</td>' +
       '</tr>'
     ).join('');
+
     if (!gameStarted && players.length > 0 && !document.getElementById('startBtn')) {
       const btn = document.createElement('button');
-      btn.id = 'startBtn'; btn.textContent = 'Start game'; btn.onclick = startGame;
+      btn.id = 'startBtn'; btn.textContent = 'Start game';
+      btn.addEventListener('click', startGame);
       document.getElementById('btnRow').insertBefore(btn, document.getElementById('btnRow').firstChild);
     }
   }
 
   function calcScores() {
     const roundScores = players.map((p, i) => {
-      const bid = parseInt(document.getElementById('bid' + i).value) || 0;
+      const bid    = parseInt(document.getElementById('bid' + i).value)    || 0;
       const tricks = parseInt(document.getElementById('tricks' + i).value) || 0;
       return bid === tricks ? 20 + 10 * bid : -10 * Math.abs(bid - tricks);
     });
@@ -430,27 +480,25 @@
       totalCell.textContent = p.total;
       totalCell.className = 'total-cell' + (p.total < 0 ? ' total-neg' : '');
     });
+    saveState();
     if (currentRound === MAX_ROUNDS) { endGame(); return; }
     currentRound++;
     updateRoundBar();
     players.forEach((p, i) => {
-      const bidEl = document.getElementById('bid' + i);
+      const bidEl    = document.getElementById('bid' + i);
       const tricksEl = document.getElementById('tricks' + i);
-      bidEl.value = ''; bidEl.max = currentRound;
-      tricksEl.value = ''; tricksEl.max = currentRound;
-      // intentionally NOT clearing round cell — shows last round's score
+      bidEl.value = '0';    bidEl.max = currentRound;    bidEl.classList.add('zero-val');
+      tricksEl.value = '0'; tricksEl.max = currentRound; tricksEl.classList.add('zero-val');
     });
+    document.getElementById('bid0')?.focus();
   }
 
   // ── History view ──────────────────────────────────────────────────────────
 
-  function onScoreEdit(ri, pi, input) {
-    const val = parseInt(input.value);
-    if (isNaN(val)) return;
+  function onScoreEdit(ri, pi, val) {
     roundHistory[ri][pi] = val;
-    input.className = 'score-input ' + (val >= 0 ? 'pos' : 'neg');
     recomputeTotals();
-    // refresh footer totals
+    saveState();
     players.forEach((p, i) => {
       const fc = document.getElementById('ftotal' + i);
       if (fc) fc.textContent = p.total;
@@ -466,26 +514,21 @@
     if (!confirm('Remove Round ' + (ri + 1) + '? Subsequent rounds will be renumbered.')) return;
     roundHistory.splice(ri, 1);
     recomputeTotals();
-    // step back if we were past the end
     currentRound = roundHistory.length + 1;
     if (currentRound > MAX_ROUNDS) currentRound = MAX_ROUNDS;
-    // if game was over, re-open it
     document.getElementById('gameOver').style.display = 'none';
     document.getElementById('calcBtn').style.display = roundHistory.length < MAX_ROUNDS ? '' : 'none';
-    // refresh current-round inputs max & totals
     players.forEach((p, i) => {
-      const bidEl = document.getElementById('bid' + i);
+      const bidEl    = document.getElementById('bid' + i);
       const tricksEl = document.getElementById('tricks' + i);
-      if (bidEl) { bidEl.max = currentRound; bidEl.value = ''; }
-      if (tricksEl) { tricksEl.max = currentRound; tricksEl.value = ''; }
+      if (bidEl)    { bidEl.max = currentRound;    bidEl.value = '0';    bidEl.classList.add('zero-val'); }
+      if (tricksEl) { tricksEl.max = currentRound; tricksEl.value = '0'; tricksEl.classList.add('zero-val'); }
       const tc = document.getElementById('total' + i);
-      if (tc) {
-        tc.textContent = p.total;
-        tc.className = 'total-cell' + (p.total < 0 ? ' total-neg' : '');
-      }
+      if (tc) { tc.textContent = p.total; tc.className = 'total-cell' + (p.total < 0 ? ' total-neg' : ''); }
       const rc = document.getElementById('round' + i);
       if (rc) { rc.textContent = '–'; rc.className = ''; }
     });
+    saveState();
     updateRoundBar();
     renderHistory();
   }
@@ -496,21 +539,22 @@
     const foot = document.getElementById('histFoot');
     const colW = Math.floor(62 / players.length);
     head.innerHTML = '<th style="width:16%;text-align:left;">Round</th>' +
-      players.map(p => '<th style="width:' + colW + '%">' + p.name + '</th>').join('') +
+      players.map(p => '<th style="width:' + colW + '%">' + esc(p.name) + '</th>').join('') +
       '<th style="width:8%"></th>';
 
     body.innerHTML = roundHistory.map(function(scores, ri) {
-      var cells = scores.map(function(s, pi) {
+      const cells = scores.map(function(s, pi) {
         return '<td><input class="score-input ' + (s >= 0 ? 'pos' : 'neg') + '" ' +
-          'type="number" value="' + s + '" ' +
-          'oninput="onScoreEdit(' + ri + ',' + pi + ',this)"></td>';
+          'type="number" value="' + s + '" data-ri="' + ri + '" data-pi="' + pi + '"></td>';
       }).join('');
       return '<tr><td>Round ' + (ri + 1) + '</td>' + cells +
-        '<td><button class="btn-del" onclick="deleteRound(' + ri + ')">−</button></td></tr>';
+        '<td><button class="btn-del" data-ri="' + ri + '">−</button></td></tr>';
     }).join('');
 
     foot.innerHTML = '<td>Total</td>' +
-      players.map((p, i) => '<td id="ftotal' + i + '" style="color:var(--contrast);font-weight:700;">' + p.total + '</td>').join('') +
+      players.map((p, i) =>
+        '<td id="ftotal' + i + '" style="color:var(--contrast);font-weight:700;">' + p.total + '</td>'
+      ).join('') +
       '<td></td>';
   }
 
@@ -518,29 +562,106 @@
 
   function endGame() {
     document.getElementById('calcBtn').style.display = 'none';
-    const winner = [...players].sort((a, b) => b.total - a.total)[0];
+    const maxTotal = Math.max(...players.map(p => p.total));
+    const winners  = players.filter(p => p.total === maxTotal);
     const go = document.getElementById('gameOver');
     go.style.display = '';
-    go.innerHTML = '<div class="winner">🏆 Winner: ' + winner.name + '</div>' +
-      '<div class="winner-sub">' + winner.total + ' points &mdash; after ' + MAX_ROUNDS + ' rounds</div>';
+    if (winners.length === 1) {
+      go.innerHTML =
+        '<div class="winner">🏆 Winner: ' + esc(winners[0].name) + '</div>' +
+        '<div class="winner-sub">' + winners[0].total + ' points &mdash; after ' + MAX_ROUNDS + ' rounds</div>';
+    } else {
+      go.innerHTML =
+        '<div class="winner">🤝 It\'s a tie!</div>' +
+        '<div class="winner-sub">' +
+          winners.map(w => esc(w.name)).join(' &amp; ') +
+          ' — ' + maxTotal + ' points each, after ' + MAX_ROUNDS + ' rounds' +
+        '</div>';
+    }
     updateRoundBar(); renderHistory();
   }
 
   function resetGame() {
+    if (gameStarted && !confirm('Start a new game? All current scores will be lost.')) return;
     players = []; currentRound = 1; gameStarted = false; roundHistory = [];
+    try { localStorage.removeItem('wizard_state'); } catch(e) {}
     const sb = document.getElementById('startBtn');
     if (sb) sb.remove();
-    document.getElementById('addRow').style.display = '';
-    document.getElementById('calcBtn').style.display = 'none';
-    document.getElementById('tabs').style.display = 'none';
+    document.getElementById('addRow').style.display   = '';
+    document.getElementById('calcBtn').style.display  = 'none';
+    document.getElementById('tabs').style.display     = 'none';
     document.getElementById('gameOver').style.display = 'none';
     document.getElementById('viewCurrent').style.display = '';
     document.getElementById('viewHistory').style.display = 'none';
     document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === 0));
     updateRoundBar(); render();
+    document.getElementById('playerName').focus();
   }
 
-  updateRoundBar(); render();
+  // ── Event wiring ──────────────────────────────────────────────────────────
+
+  document.addEventListener('DOMContentLoaded', () => {
+
+    // Static buttons & inputs
+    document.getElementById('playerName').addEventListener('keydown', e => {
+      if (e.key === 'Enter') addPlayer();
+    });
+    document.getElementById('addBtn').addEventListener('click', addPlayer);
+    document.getElementById('calcBtn').addEventListener('click', calcScores);
+    document.getElementById('newGameBtn').addEventListener('click', resetGame);
+
+    // Tab buttons
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', function() { switchTab(this.dataset.tab, this); });
+    });
+
+    // Current-round table: select-all on focus, grey-zero on input (event delegation)
+    document.querySelector('#scoreTable tbody').addEventListener('focus', e => {
+      if (e.target.matches('input[type=number]')) e.target.select();
+    }, true);
+    document.querySelector('#scoreTable tbody').addEventListener('input', e => {
+      if (e.target.matches('input[type=number]'))
+        e.target.classList.toggle('zero-val', e.target.value === '0' || e.target.value === '');
+    });
+
+    // History table: score edits + delete buttons (event delegation — survives table rebuilds)
+    document.getElementById('histBody').addEventListener('focus', e => {
+      if (e.target.classList.contains('score-input')) e.target.select();
+    }, true);
+    document.getElementById('histBody').addEventListener('input', e => {
+      if (!e.target.classList.contains('score-input')) return;
+      const val = parseInt(e.target.value);
+      if (isNaN(val)) return;
+      e.target.className = 'score-input ' + (val >= 0 ? 'pos' : 'neg');
+      onScoreEdit(+e.target.dataset.ri, +e.target.dataset.pi, val);
+    });
+    document.getElementById('histBody').addEventListener('click', e => {
+      const btn = e.target.closest('.btn-del');
+      if (btn) deleteRound(+btn.dataset.ri);
+    });
+
+    // Restore from localStorage
+    loadState();
+
+    if (gameStarted) {
+      document.getElementById('addRow').style.display  = 'none';
+      document.getElementById('tabs').style.display    = '';
+      document.getElementById('calcBtn').style.display = roundHistory.length < MAX_ROUNDS ? '' : 'none';
+    }
+
+    updateRoundBar();
+    render();
+
+    // Restore last-round scores into the current-round view after render() creates the cells
+    if (gameStarted && roundHistory.length > 0) {
+      roundHistory[roundHistory.length - 1].forEach((s, i) => {
+        const cell = document.getElementById('round' + i);
+        if (cell) { cell.textContent = (s >= 0 ? '+' : '') + s; cell.className = s >= 0 ? 'pos' : 'neg'; }
+      });
+    }
+
+    if (gameStarted && roundHistory.length === MAX_ROUNDS) endGame();
+  });
 </script>
 </body>
 </html>
